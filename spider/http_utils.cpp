@@ -44,18 +44,27 @@ bool isText(const boost::beast::multi_buffer::const_buffers_type& b)
 
 // Функция удаления тегов и очистки теста
 std::string cleanHtml(const std::string& html) {
-	// Удаляем HTML-теги
-	std::regex tags("<[^>]+>");
-	std::string text = std::regex_replace(html, tags, " ");
 
-	// Убираем знаки препинания
-	std::regex symbols("[^a-zA-Zа-яА-Я0-9 ]+");
-	text = std::regex_replace(text, symbols, " ");
+		// Удаляем HTML-теги
+		std::regex tags("<[^>]+>");
+		std::string text = std::regex_replace(html, tags, " ");
 
-	// Приводим к нижнему регистру
-	text = boost::locale::to_lower(text);
+		// Убираем знаки препинания
+		std::regex symbols("[^a-zA-Zа-яА-Я0-9 ]+");
+		text = std::regex_replace(text, symbols, " ");
 
-	return text;
+		// Приводим к нижнему регистру 
+		try {
+			// Устанавливаем глобальную локаль
+			static boost::locale::generator gen;
+			std::locale loc = gen("en_US.UTF-8");  
+			text = boost::locale::to_lower(text, loc);
+		}
+		catch (const std::exception& e) {
+			std::cerr << "boost::locale::to_lower failed: " << e.what() << std::endl;
+		}
+		return text;
+
 }
 // Разбиваем текст на слова и считаем частоту
 std::unordered_map<std::string, int> countWordFrequency(const std::string& text) {
@@ -75,6 +84,7 @@ std::unordered_map<std::string, int> countWordFrequency(const std::string& text)
 
 void saveToDatabase(const std::string& url, const std::unordered_map<std::string, int>& wordFrequency) {
 	try {
+		// Подключение к базе данных
 		pqxx::connection conn("dbname=seach_db user=postgres password=911215171 host=localhost port=5432");
 		pqxx::work txn(conn);
 

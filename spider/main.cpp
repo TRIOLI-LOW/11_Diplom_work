@@ -4,7 +4,7 @@
 #include <mutex>
 #include <queue>
 #include <condition_variable>
-
+#include <unordered_map>
 #include "http_utils.h"
 #include <functional>
 
