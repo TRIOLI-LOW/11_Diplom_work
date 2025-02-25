@@ -37,7 +37,6 @@ void parseLink(const Link& link, int depth)
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 		std::string html = getHtmlContent(link);
-
 		if (html.size() == 0)
 		{
 			std::cout << "Failed to get HTML Content" << std::endl;
@@ -46,10 +45,27 @@ void parseLink(const Link& link, int depth)
 
 		// TODO: Parse HTML code here on your own
 
-		std::cout << "html content:" << std::endl;
-		std::cout << html << std::endl;
+		std::string text = cleanHtml(html);
+		std::cout << "Extracted text: "<< std::endl;
+		std::cout << text << std::endl;
+		//std::cout << "html content:" << std::endl;
+		//std::cout << html << std::endl;
 
 		// TODO: Collect more links from HTML code and add them to the parser like that:
+
+		// Подсчитываем частоту слов
+		std::unordered_map<std::string, int> wordFrequency = countWordFrequency(text);
+
+		// Сохранение данных в базу	
+		
+		
+		std::string fullUrl = "https://" + link.hostName + link.query;
+
+		std::cout << "**********************Saving to database: " << fullUrl << std::endl;
+
+
+		saveToDatabase(fullUrl, wordFrequency);
+
 
 		std::vector<Link> links = {
 			{ProtocolType::HTTPS, "en.wikipedia.org", "/wiki/Wikipedia"},

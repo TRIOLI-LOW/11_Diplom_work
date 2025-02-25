@@ -11,6 +11,11 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
 #include <openssl/ssl.h>
+#include <regex>
+#include <boost/locale.hpp>
+#include <unordered_map>
+#include <sstream>
+#include <pqxx/pqxx>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -34,6 +39,73 @@ bool isText(const boost::beast::multi_buffer::const_buffers_type& b)
 	}
 
 	return true;
+}
+
+
+// Функция удаления тегов и очистки теста
+std::string cleanHtml(const std::string& html) {
+	// Удаляем HTML-теги
+	std::regex tags("<[^>]+>");
+	std::string text = std::regex_replace(html, tags, " ");
+
+	// Убираем знаки препинания
+	std::regex symbols("[^a-zA-Zа-яА-Я0-9 ]+");
+	text = std::regex_replace(text, symbols, " ");
+
+	// Приводим к нижнему регистру
+	text = boost::locale::to_lower(text);
+
+	return text;
+}
+// Разбиваем текст на слова и считаем частоту
+std::unordered_map<std::string, int> countWordFrequency(const std::string& text) {
+	std::unordered_map<std::string, int> wordCount;
+	std::istringstream iss(text);
+	std::string word;
+
+	while (iss >> word) {
+		if (word.length() >= 3 && word.length() <= 32) {  // Отбрасываем лишние слова
+			wordCount[word]++;
+		}
+	}
+
+	return wordCount;
+}
+
+// Обновленная функция для сохранения данных с использованием существующего подключения
+void saveToDatabase(const std::string& url, const std::unordered_map<std::string, int>& wordFrequency) {
+	try {
+		pqxx::connection conn("dbname=seach_db user=postgres password=911215171 host=localhost port=5432");
+		pqxx::work txn(conn);
+
+		// Сохраняем URL, если его еще нет
+		txn.exec("INSERT INTO documents (url) VALUES (" + txn.quote(url) + ") ON CONFLICT (url) DO NOTHING");
+
+		// Получаем ID страницы
+		pqxx::result r = txn.exec("SELECT id FROM documents WHERE url = " + txn.quote(url));
+		if (r.empty()) return;
+		int doc_id = r[0]["id"].as<int>();
+
+		// Сохраняем слова и их частоту
+		for (const auto& [word, frequency] : wordFrequency) {
+			txn.exec("INSERT INTO words (word) VALUES (" + txn.quote(word) + ") ON CONFLICT (word) DO NOTHING");
+
+			// Получаем ID слова
+			pqxx::result word_r = txn.exec("SELECT id FROM words WHERE word = " + txn.quote(word));
+			int word_id = word_r[0]["id"].as<int>();
+
+			// Записываем частоту слова в этом документе
+			txn.exec("INSERT INTO word_frequencies (doc_id, word_id, frequency) VALUES (" +
+				std::to_string(doc_id) + ", " + std::to_string(word_id) + ", " + std::to_string(frequency) +
+				") ON CONFLICT (doc_id, word_id) DO UPDATE SET frequency = word_frequencies.frequency + " +
+				std::to_string(frequency));
+		}
+
+		txn.commit();
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Database error: " << e.what() << std::endl;
+	}
 }
 
 std::string getHtmlContent(const Link& link)
