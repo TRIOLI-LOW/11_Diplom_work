@@ -72,18 +72,23 @@ std::unordered_map<std::string, int> countWordFrequency(const std::string& text)
 	return wordCount;
 }
 
-// Обновленная функция для сохранения данных с использованием существующего подключения
+
 void saveToDatabase(const std::string& url, const std::unordered_map<std::string, int>& wordFrequency) {
 	try {
 		pqxx::connection conn("dbname=seach_db user=postgres password=911215171 host=localhost port=5432");
 		pqxx::work txn(conn);
 
-		// Сохраняем URL, если его еще нет
+		// Сохраняем URL
 		txn.exec("INSERT INTO documents (url) VALUES (" + txn.quote(url) + ") ON CONFLICT (url) DO NOTHING");
 
 		// Получаем ID страницы
 		pqxx::result r = txn.exec("SELECT id FROM documents WHERE url = " + txn.quote(url));
-		if (r.empty()) return;
+		std::cout << "Row content: " << r[0][0].c_str() << std::endl; 
+
+		if (r.empty()) {
+			std::cout << "No rows returned for URL: " << url << std::endl;
+			return;
+		}
 		int doc_id = r[0]["id"].as<int>();
 
 		// Сохраняем слова и их частоту
@@ -94,7 +99,7 @@ void saveToDatabase(const std::string& url, const std::unordered_map<std::string
 			pqxx::result word_r = txn.exec("SELECT id FROM words WHERE word = " + txn.quote(word));
 			int word_id = word_r[0]["id"].as<int>();
 
-			// Записываем частоту слова в этом документе
+			// Записываем частоту слова
 			txn.exec("INSERT INTO word_frequencies (doc_id, word_id, frequency) VALUES (" +
 				std::to_string(doc_id) + ", " + std::to_string(word_id) + ", " + std::to_string(frequency) +
 				") ON CONFLICT (doc_id, word_id) DO UPDATE SET frequency = word_frequencies.frequency + " +
