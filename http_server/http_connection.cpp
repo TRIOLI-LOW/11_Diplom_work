@@ -1,5 +1,5 @@
 #include "http_connection.h"
-
+#include "../ini_parser.h"
 #include <sstream>
 #include <iomanip>
 #include <locale>
@@ -9,6 +9,7 @@
 #include <pqxx/pqxx>
 #include <boost/beast/core.hpp> 
 #include <boost/beast/http.hpp>
+
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -25,12 +26,25 @@ std::string join(const std::vector<std::string>& vec, const std::string& delimit
 	return oss.str();  
 }
 
-// Функция для выполнения SQL-запроса в PostgreSQL
+// Функция для выполнения SQL-запроса
 std::vector<std::string> executeSearchQuery(const std::string& query) {
 	std::vector<std::string> resultUrls;
 	try {
 		// Подключение к базе данных
-		pqxx::connection conn("dbname=seach_db user=postgres password=911215171 host=localhost port=5432");
+		IniParser ini("../../../config.ini"); 
+		std::string db_host = ini.getValue<std::string>("Database", "host");
+		std::string db_port = ini.getValue<std::string>("Database", "port");
+		std::string db_name = ini.getValue<std::string>("Database", "dbname");
+		std::string db_user = ini.getValue<std::string>("Database", "user");
+		std::string db_password = ini.getValue<std::string>("Database", "password");
+
+		// Формируем строку подключения
+		std::string conn_str = "dbname=" + db_name + " user=" + db_user +
+			" password=" + db_password + " host=" + db_host +
+			" port=" + db_port;
+
+		// Подключаемся к БД
+		pqxx::connection conn(conn_str);
 		pqxx::work txn(conn);
 
 		// Выполнение SQL-запроса
@@ -46,7 +60,7 @@ std::vector<std::string> executeSearchQuery(const std::string& query) {
 	}
 	return resultUrls;
 }
-//****************
+
 
 std::string url_decode(const std::string& encoded) {
 	std::string res;
@@ -75,6 +89,7 @@ std::string convert_to_utf8(const std::string& str) {
 HttpConnection::HttpConnection(tcp::socket socket)
 	: socket_(std::move(socket))
 {
+
 }
 
 

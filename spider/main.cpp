@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include "http_utils.h"
 #include <functional>
+#include "../ini_parser.h"
 
 
 std::mutex mtx;
@@ -43,21 +44,15 @@ void parseLink(const Link& link, int depth)
 			return;
 		}
 
-		// TODO: Parse HTML code here on your own
 
 		std::string text = cleanHtml(html);
 		std::cout << "Extracted text: "<< std::endl;
 		std::cout << text << std::endl;
-		//std::cout << "html content:" << std::endl;
-		//std::cout << html << std::endl;
-
-		// TODO: Collect more links from HTML code and add them to the parser like that:
 
 		// Подсчитываем частоту слов
 		std::unordered_map<std::string, int> wordFrequency = countWordFrequency(text);
 
 		// Сохранение данных в базу	
-		
 		
 		std::string fullUrl = "https://" + link.hostName + link.query;
 
@@ -67,20 +62,13 @@ void parseLink(const Link& link, int depth)
 		saveToDatabase(fullUrl, wordFrequency);
 
 
-		std::vector<Link> links = {
-			{ProtocolType::HTTPS, "en.wikipedia.org", "/wiki/Wikipedia"},
-			{ProtocolType::HTTPS, "wikimediafoundation.org", "/"},
-		};
+		 std::vector<Link> links = extractLinks(html, link.hostName, link.protocol);
 
-		if (depth > 0) {
-			std::lock_guard<std::mutex> lock(mtx);
-
-			size_t count = links.size();
-			size_t index = 0;
-			for (auto& subLink : links)
-			{
-				tasks.push([subLink, depth]() { parseLink(subLink, depth - 1); });
-			}
+		 if (depth > 0) {
+			 std::lock_guard<std::mutex> lock(mtx);
+			 for (auto& subLink : links) {
+				 tasks.push([subLink, depth]() { parseLink(subLink, depth - 1); });
+			 }
 			cv.notify_one();
 		}
 	}
@@ -95,6 +83,20 @@ void parseLink(const Link& link, int depth)
 
 int main()
 {
+	initializeDatabase();
+
+	IniParser ini("../../../config.ini");
+	std::string start_url = ini.getValue<std::string>("Spider", "start_url");
+	int depth = ini.getValue<int>("Spider", "depth");
+
+	// Разбираем URL на протокол, хост и путь
+	std::string protocol = start_url.substr(0, start_url.find("://"));
+	std::string url_without_protocol = start_url.substr(start_url.find("://") + 3);
+	std::string host = url_without_protocol.substr(0, url_without_protocol.find('/'));
+	std::string query = url_without_protocol.substr(url_without_protocol.find('/'));
+
+	ProtocolType proto = (protocol == "https") ? ProtocolType::HTTPS : ProtocolType::HTTP;
+	Link link{ proto, host, query };
 	try {
 		int numThreads = std::thread::hardware_concurrency();
 		std::vector<std::thread> threadPool;
@@ -103,12 +105,11 @@ int main()
 			threadPool.emplace_back(threadPoolWorker);
 		}
 
-		Link link{ ProtocolType::HTTPS, "en.wikipedia.org", "/wiki/Main_Page" };
 
 
 		{
 			std::lock_guard<std::mutex> lock(mtx);
-			tasks.push([link]() { parseLink(link, 1); });
+			tasks.push([link, depth]() { parseLink(link,depth); });
 			cv.notify_one();
 		}
 

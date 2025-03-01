@@ -6,6 +6,7 @@ add_executable(SpiderApp
 	http_utils.h
 	http_utils.cpp
 	link.h
+        ../ini_parser.cpp
 	)
 
 target_compile_features(SpiderApp PRIVATE cxx_std_17) 

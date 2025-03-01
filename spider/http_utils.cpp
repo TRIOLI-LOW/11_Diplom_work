@@ -1,5 +1,5 @@
-#include "http_utils.h"
-
+п»ї#include "http_utils.h"
+#include "../ini_parser.h"
 #include <regex>
 #include <iostream>
 
@@ -17,6 +17,7 @@
 #include <sstream>
 #include <pqxx/pqxx>
 
+
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
@@ -24,6 +25,56 @@ namespace ip = boost::asio::ip;
 namespace ssl = boost::asio::ssl;
 
 using tcp = boost::asio::ip::tcp;
+// РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Р±Р°Р·Рµ РґР°РЅРЅС‹С…
+
+std::string Connect_str() {
+
+	IniParser ini("../../../config.ini");
+	std::string db_host = ini.getValue<std::string>("Database", "host");
+	std::string db_port = ini.getValue<std::string>("Database", "port");
+	std::string db_name = ini.getValue<std::string>("Database", "dbname");
+	std::string db_user = ini.getValue<std::string>("Database", "user");
+	std::string db_password = ini.getValue<std::string>("Database", "password");
+	// Р¤РѕСЂРјРёСЂСѓРµРј СЃС‚СЂРѕРєСѓ РїРѕРґРєР»СЋС‡РµРЅРёСЏ
+	std::string conn_str = "dbname=" + db_name + " user=" + db_user +
+		" password=" + db_password + " host=" + db_host +
+		" port=" + db_port;
+	return  conn_str;
+}
+
+
+void initializeDatabase() {
+	try {
+
+		pqxx::connection conn(Connect_str());
+		pqxx::work txn(conn);
+
+		// РЎРѕР·РґР°РµРј С‚Р°Р±Р»РёС†С‹
+		txn.exec(R"(
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                url TEXT UNIQUE NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS words (
+                id SERIAL PRIMARY KEY,
+                word TEXT UNIQUE NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS word_frequencies (
+                doc_id INT REFERENCES documents(id) ON DELETE CASCADE,
+                word_id INT REFERENCES words(id) ON DELETE CASCADE,
+                frequency INT NOT NULL,
+                PRIMARY KEY (doc_id, word_id)
+            );
+        )");
+
+		txn.commit();
+		std::cout << "в†•в†•в†•Database initialized successfully.в†•в†•в†•\n";
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Database initialization error: " << e.what() << std::endl;
+	}
+}
+
 
 bool isText(const boost::beast::multi_buffer::const_buffers_type& b)
 {
@@ -42,20 +93,20 @@ bool isText(const boost::beast::multi_buffer::const_buffers_type& b)
 }
 
 
-// Функция удаления тегов и очистки теста
+// Р¤СѓРЅРєС†РёСЏ СѓРґР°Р»РµРЅРёСЏ С‚РµРіРѕРІ Рё РѕС‡РёСЃС‚РєРё С‚РµСЃС‚Р°
 std::string cleanHtml(const std::string& html) {
 
-		// Удаляем HTML-теги
+		// РЈРґР°Р»СЏРµРј HTML-С‚РµРіРё
 		std::regex tags("<[^>]+>");
 		std::string text = std::regex_replace(html, tags, " ");
 
-		// Убираем знаки препинания
-		std::regex symbols("[^a-zA-Zа-яА-Я0-9 ]+");
+		// РЈР±РёСЂР°РµРј Р·РЅР°РєРё РїСЂРµРїРёРЅР°РЅРёСЏ
+		std::regex symbols("[^a-zA-ZР°-СЏРђ-РЇ0-9 ]+");
 		text = std::regex_replace(text, symbols, " ");
 
-		// Приводим к нижнему регистру 
+		// РџСЂРёРІРѕРґРёРј Рє РЅРёР¶РЅРµРјСѓ СЂРµРіРёСЃС‚СЂСѓ 
 		try {
-			// Устанавливаем глобальную локаль
+			// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј РіР»РѕР±Р°Р»СЊРЅСѓСЋ Р»РѕРєР°Р»СЊ
 			static boost::locale::generator gen;
 			std::locale loc = gen("en_US.UTF-8");  
 			text = boost::locale::to_lower(text, loc);
@@ -66,32 +117,58 @@ std::string cleanHtml(const std::string& html) {
 		return text;
 
 }
-// Разбиваем текст на слова и считаем частоту
+// Р Р°Р·Р±РёРІР°РµРј С‚РµРєСЃС‚ РЅР° СЃР»РѕРІР° Рё СЃС‡РёС‚Р°РµРј С‡Р°СЃС‚РѕС‚Сѓ
 std::unordered_map<std::string, int> countWordFrequency(const std::string& text) {
 	std::unordered_map<std::string, int> wordCount;
 	std::istringstream iss(text);
 	std::string word;
 
 	while (iss >> word) {
-		if (word.length() >= 3 && word.length() <= 32) {  // Отбрасываем лишние слова
+		if (word.length() >= 3 && word.length() <= 32) {  // РћС‚Р±СЂР°СЃС‹РІР°РµРј Р»РёС€РЅРёРµ СЃР»РѕРІР°
 			wordCount[word]++;
 		}
 	}
 
 	return wordCount;
 }
+// РР·РІР»РµРєР°РµРј СЃСЃС‹Р»РєРё РёР· HTML
 
+std::vector<Link> extractLinks(const std::string& html, const std::string& baseHost, ProtocolType protocol) {
+	std::vector<Link> links;
+	std::regex link_regex(R"(<a\s+[^>]*href=["']([^"']+)["'])");
+	std::smatch match;
+	std::string::const_iterator searchStart(html.cbegin());
+
+	while (std::regex_search(searchStart, html.cend(), match, link_regex)) {
+		std::string url = match[1].str();
+
+		if (url.find("http") == 0) {
+			std::string proto = url.substr(0, url.find("://"));
+			std::string rest = url.substr(url.find("://") + 3);
+			std::string host = rest.substr(0, rest.find('/'));
+			std::string query = rest.substr(rest.find('/'));
+
+			ProtocolType linkProtocol = (proto == "https") ? ProtocolType::HTTPS : ProtocolType::HTTP;
+			links.push_back({ linkProtocol, host, query });
+		}
+		else if (url[0] == '/') {
+			links.push_back({ protocol, baseHost, url });
+		}
+
+		searchStart = match.suffix().first;
+	}
+
+	return links;
+}
 
 void saveToDatabase(const std::string& url, const std::unordered_map<std::string, int>& wordFrequency) {
 	try {
-		// Подключение к базе данных
-		pqxx::connection conn("dbname=seach_db user=postgres password=911215171 host=localhost port=5432");
+		pqxx::connection conn(Connect_str());
 		pqxx::work txn(conn);
-
-		// Сохраняем URL
+		// РЎРѕС…СЂР°РЅСЏРµРј URL
 		txn.exec("INSERT INTO documents (url) VALUES (" + txn.quote(url) + ") ON CONFLICT (url) DO NOTHING");
 
-		// Получаем ID страницы
+		// РџРѕР»СѓС‡Р°РµРј ID СЃС‚СЂР°РЅРёС†С‹
 		pqxx::result r = txn.exec("SELECT id FROM documents WHERE url = " + txn.quote(url));
 		std::cout << "Row content: " << r[0][0].c_str() << std::endl; 
 
@@ -101,15 +178,15 @@ void saveToDatabase(const std::string& url, const std::unordered_map<std::string
 		}
 		int doc_id = r[0]["id"].as<int>();
 
-		// Сохраняем слова и их частоту
+		// РЎРѕС…СЂР°РЅСЏРµРј СЃР»РѕРІР° Рё РёС… С‡Р°СЃС‚РѕС‚Сѓ
 		for (const auto& [word, frequency] : wordFrequency) {
 			txn.exec("INSERT INTO words (word) VALUES (" + txn.quote(word) + ") ON CONFLICT (word) DO NOTHING");
 
-			// Получаем ID слова
+			// РџРѕР»СѓС‡Р°РµРј ID СЃР»РѕРІР°
 			pqxx::result word_r = txn.exec("SELECT id FROM words WHERE word = " + txn.quote(word));
 			int word_id = word_r[0]["id"].as<int>();
 
-			// Записываем частоту слова
+			// Р—Р°РїРёСЃС‹РІР°РµРј С‡Р°СЃС‚РѕС‚Сѓ СЃР»РѕРІР°
 			txn.exec("INSERT INTO word_frequencies (doc_id, word_id, frequency) VALUES (" +
 				std::to_string(doc_id) + ", " + std::to_string(word_id) + ", " + std::to_string(frequency) +
 				") ON CONFLICT (doc_id, word_id) DO UPDATE SET frequency = word_frequencies.frequency + " +
