@@ -4,11 +4,15 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
 #include <boost/asio.hpp>
+#include <boost/locale.hpp>
+#include "../ini_parser.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
 using tcp = boost::asio::ip::tcp;
+
+const std::string config_way = "../../../config.ini";
 
 class HttpConnection : public std::enable_shared_from_this<HttpConnection>
 {

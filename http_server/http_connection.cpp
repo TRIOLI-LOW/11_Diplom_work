@@ -1,5 +1,5 @@
 #include "http_connection.h"
-#include "../ini_parser.h"
+
 #include <sstream>
 #include <iomanip>
 #include <locale>
@@ -11,10 +11,13 @@
 #include <boost/beast/http.hpp>
 
 
+
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
 using tcp = boost::asio::ip::tcp;
+
+
 
 // Функция для объединения слов с разделителем
 std::string join(const std::vector<std::string>& vec, const std::string& delimiter) {
@@ -31,7 +34,7 @@ std::vector<std::string> executeSearchQuery(const std::string& query) {
 	std::vector<std::string> resultUrls;
 	try {
 		// Подключение к базе данных
-		IniParser ini("../../../config.ini"); 
+		IniParser ini(config_way); 
 		std::string db_host = ini.getValue<std::string>("Database", "host");
 		std::string db_port = ini.getValue<std::string>("Database", "port");
 		std::string db_name = ini.getValue<std::string>("Database", "dbname");
@@ -197,7 +200,7 @@ void HttpConnection::createResponsePost()
 		std::string key = s.substr(0, pos);
 		std::string value = s.substr(pos + 1);
 
-		std::string utf8value = convert_to_utf8(value);
+		std::string utf8value = boost::locale::to_lower(convert_to_utf8(value), std::locale());
 
 		if (key != "search")
 		{
@@ -221,7 +224,7 @@ void HttpConnection::createResponsePost()
 			"FROM documents d "
 			"JOIN word_frequencies wf ON d.id = wf.doc_id "
 			"JOIN words w ON wf.word_id = w.id "
-			"WHERE w.word IN ('" + join(search_terms, "','") + "') "
+			"WHERE LOWER(w.word) IN ('" + join(search_terms, "','") + "') "
 			"GROUP BY d.url "
 			"ORDER BY relevance DESC "
 			"LIMIT 10;";

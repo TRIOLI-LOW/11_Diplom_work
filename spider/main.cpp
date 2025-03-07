@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include "http_utils.h"
 #include <functional>
-#include "../ini_parser.h"
+
 
 
 std::mutex mtx;
@@ -85,7 +85,7 @@ int main()
 {
 	initializeDatabase();
 
-	IniParser ini("../../../config.ini");
+	IniParser ini(config_way);
 	std::string start_url = ini.getValue<std::string>("Spider", "start_url");
 	int depth = ini.getValue<int>("Spider", "depth");
 

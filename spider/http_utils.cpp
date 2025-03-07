@@ -1,5 +1,4 @@
 ﻿#include "http_utils.h"
-#include "../ini_parser.h"
 #include <regex>
 #include <iostream>
 
@@ -25,11 +24,14 @@ namespace ip = boost::asio::ip;
 namespace ssl = boost::asio::ssl;
 
 using tcp = boost::asio::ip::tcp;
+
+
+
 // Подключение к базе данных
 
 std::string Connect_str() {
 
-	IniParser ini("../../../config.ini");
+	IniParser ini(config_way);
 	std::string db_host = ini.getValue<std::string>("Database", "host");
 	std::string db_port = ini.getValue<std::string>("Database", "port");
 	std::string db_name = ini.getValue<std::string>("Database", "dbname");
@@ -146,7 +148,9 @@ std::vector<Link> extractLinks(const std::string& html, const std::string& baseH
 			std::string proto = url.substr(0, url.find("://"));
 			std::string rest = url.substr(url.find("://") + 3);
 			std::string host = rest.substr(0, rest.find('/'));
-			std::string query = rest.substr(rest.find('/'));
+
+			std::size_t pos = rest.find('/');
+			std::string query = (pos != std::string::npos) ? rest.substr(pos) : "/";
 
 			ProtocolType linkProtocol = (proto == "https") ? ProtocolType::HTTPS : ProtocolType::HTTP;
 			links.push_back({ linkProtocol, host, query });
